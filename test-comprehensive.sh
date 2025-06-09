@@ -1,11 +1,29 @@
 #!/bin/bash
 
+# Comprehensive API test script for fintech demo
+# Usage: ./test-comprehensive.sh [hostname]
+# 
+# If hostname is provided (e.g., 62c892163g.execute-api.eu-west-1.amazonaws.com),
+# the script will bypass AWS CLI requirements and skip CloudWatch logs.
+# This allows testing without AWS account access.
+
 set -e
 
 # Configuration
 AWS_PROFILE="sandbox"
 AWS_REGION="eu-west-1"
 STACK_NAME="fintechdemo-workflow"
+
+# Check for hostname argument
+HOSTNAME=""
+if [ $# -eq 1 ]; then
+    HOSTNAME="$1"
+    echo "Using provided hostname: $HOSTNAME"
+elif [ $# -gt 1 ]; then
+    echo "Usage: $0 [hostname]"
+    echo "Example: $0 62c892163g.execute-api.eu-west-1.amazonaws.com"
+    exit 1
+fi
 
 # Debug mode (set to 1 to enable verbose output)
 DEBUG=${DEBUG:-1}
@@ -84,29 +102,37 @@ check_dependencies() {
         exit 1
     fi
     
-    if ! command -v aws &> /dev/null; then
-        print_error "AWS CLI is required but not installed"
+    # AWS CLI is only required if no hostname is provided
+    if [ -z "$HOSTNAME" ] && ! command -v aws &> /dev/null; then
+        print_error "AWS CLI is required when hostname is not provided"
+        print_error "Either install AWS CLI or provide hostname as argument:"
+        print_error "  $0 your-api-gateway-hostname.amazonaws.com"
         exit 1
     fi
 }
 
-# Get API Gateway URL from CloudFormation stack
+# Get API Gateway URL from CloudFormation stack or use provided hostname
 get_api_url() {
-    print_status "Getting API Gateway URL from CloudFormation stack..."
+    if [ -n "$HOSTNAME" ]; then
+        API_URL="https://$HOSTNAME/dev"
+        print_status "Using provided hostname to construct API URL: $API_URL"
+    else
+        print_status "Getting API Gateway URL from CloudFormation stack..."
 
-    API_URL=$(aws cloudformation describe-stacks \
-        --stack-name "$STACK_NAME" \
-        --profile "$AWS_PROFILE" \
-        --region "$AWS_REGION" \
-        --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayUrl`].OutputValue' \
-        --output text)
+        API_URL=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --profile "$AWS_PROFILE" \
+            --region "$AWS_REGION" \
+            --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayUrl`].OutputValue' \
+            --output text)
 
-    if [ -z "$API_URL" ]; then
-        print_error "Could not get API Gateway URL from stack"
-        exit 1
+        if [ -z "$API_URL" ]; then
+            print_error "Could not get API Gateway URL from stack"
+            exit 1
+        fi
+
+        print_status "API Gateway URL: $API_URL"
     fi
-
-    print_status "API Gateway URL: $API_URL"
 }
 
 # Make HTTP request and return response
@@ -234,7 +260,11 @@ main() {
     print_status "4. Fetch customer accounts"
     print_status "5. Fetch account transactions"
     print_status "6. Fetch transaction CSV export"
-    print_status "7. Display recent Lambda function logs"
+    if [ -z "$HOSTNAME" ]; then
+        print_status "7. Display recent Lambda function logs"
+    else
+        print_status "7. Skip Lambda logs (no AWS access required)"
+    fi
     echo ""
     
     check_dependencies
@@ -447,9 +477,13 @@ main() {
     fi
     
     # ========================================
-    # 9. Display Lambda Logs
+    # 9. Display Lambda Logs (only if AWS access available)
     # ========================================
-    display_lambda_logs
+    if [ -z "$HOSTNAME" ]; then
+        display_lambda_logs
+    else
+        print_status "Skipping Lambda logs (no AWS access required when hostname provided)"
+    fi
     
     # ========================================
     # 10. Summary and URLs

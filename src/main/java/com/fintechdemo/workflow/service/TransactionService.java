@@ -74,11 +74,8 @@ public class TransactionService {
         
         validateCommonFields(accountId, userId, currency, amount, transactedAt, Transaction.TransactionType.WITHDRAWAL);
         
-        // Validate beneficiary IBAN (required for withdrawals)
-        if (beneficiaryIBAN == null || beneficiaryIBAN.trim().isEmpty()) {
-            throw new IllegalArgumentException("Beneficiary IBAN is required for withdrawals");
-        }
-        if (!isValidIBAN(beneficiaryIBAN)) {
+        // Validate beneficiary IBAN format if provided (empty string is allowed per requirements)
+        if (beneficiaryIBAN != null && !beneficiaryIBAN.trim().isEmpty() && !isValidIBAN(beneficiaryIBAN)) {
             throw new IllegalArgumentException("Invalid beneficiary IBAN: " + beneficiaryIBAN);
         }
         

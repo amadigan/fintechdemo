@@ -140,25 +140,29 @@ class TransactionServiceIT extends BaseIntegrationTest {
     }
 
     @Test
-    void shouldRequireBeneficiaryIBANForWithdrawals() {
-        // Given
+    void shouldAllowEmptyBeneficiaryIBANForWithdrawals() {
+        // Given - per requirements.md example which shows "beneficiaryIBAN": ""
         String accountId = UUID.randomUUID().toString();
 
-        // When & Then - null IBAN
-        assertThatThrownBy(() -> transactionService.createWithdrawal(
-            accountId, "user123", "EUR", new BigDecimal("-100"),
-            Instant.now(), null, "DE", "ref", "purpose"
-        ))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("Beneficiary IBAN is required");
-
-        // When & Then - empty IBAN
-        assertThatThrownBy(() -> transactionService.createWithdrawal(
+        // When - empty IBAN should be allowed (as shown in requirements)
+        Transaction withdrawal = transactionService.createWithdrawal(
             accountId, "user123", "EUR", new BigDecimal("-100"),
             Instant.now(), "", "DE", "ref", "purpose"
-        ))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("Beneficiary IBAN is required");
+        );
+
+        // Then - should create successfully
+        assertThat(withdrawal).isNotNull();
+        assertThat(withdrawal.getBeneficiaryIBAN()).isEqualTo("");
+        assertThat(withdrawal.getTransactionType()).isEqualTo(Transaction.TransactionType.WITHDRAWAL);
+
+        // Also test null is allowed
+        Transaction withdrawal2 = transactionService.createWithdrawal(
+            accountId, "user456", "EUR", new BigDecimal("-50"),
+            Instant.now(), null, "US", "ref2", "purpose2"
+        );
+        
+        assertThat(withdrawal2).isNotNull();
+        assertThat(withdrawal2.getBeneficiaryIBAN()).isNull();
     }
 
     @Test

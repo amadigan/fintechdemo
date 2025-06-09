@@ -1,13 +1,45 @@
 #!/bin/bash
 
+# Deployment script for fintech demo
+# 
+# Configuration can be overridden using environment variables:
+#   AWS_PROFILE    - AWS profile to use (default: sandbox)
+#   AWS_REGION     - AWS region for deployment (default: eu-west-1)
+#   S3_BUCKET      - S3 bucket for Lambda code storage (default: amadigan-deploy-68883f54)
+#   STACK_NAME     - CloudFormation stack name (default: fintechdemo-workflow)
+#   ENVIRONMENT    - Deployment environment (default: dev)
+#
+# Examples:
+#   # Use default configuration
+#   ./deploy.sh
+#
+#   # Override specific values
+#   AWS_PROFILE=production AWS_REGION=us-east-1 ./deploy.sh
+#
+#   # Set environment variables and run
+#   export AWS_PROFILE=myprofile
+#   export S3_BUCKET=my-deploy-bucket
+#   ./deploy.sh
+
 set -e
 
-# Configuration
-AWS_PROFILE="sandbox"
-AWS_REGION="eu-west-1"
-S3_BUCKET="amadigan-deploy-68883f54"
-STACK_NAME="fintechdemo-workflow"
-ENVIRONMENT="dev"
+# Configuration - can be overridden by environment variables
+AWS_PROFILE="${AWS_PROFILE:-sandbox}"
+AWS_REGION="${AWS_REGION:-eu-west-1}"
+S3_BUCKET="${S3_BUCKET:-amadigan-deploy-68883f54}"
+STACK_NAME="${STACK_NAME:-fintechdemo-workflow}"
+ENVIRONMENT="${ENVIRONMENT:-dev}"
+
+# Print configuration being used
+echo ""
+echo "=== DEPLOYMENT CONFIGURATION ==="
+echo "AWS_PROFILE: $AWS_PROFILE"
+echo "AWS_REGION: $AWS_REGION"
+echo "S3_BUCKET: $S3_BUCKET"
+echo "STACK_NAME: $STACK_NAME"
+echo "ENVIRONMENT: $ENVIRONMENT"
+echo "==============================="
+echo ""
 
 # Colors for output
 RED='\033[0;31m'
