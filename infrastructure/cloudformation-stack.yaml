@@ -1,0 +1,277 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Fintechdemo Workflow Service Infrastructure'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment name
+  LambdaCodeBucket:
+    Type: String
+    Default: amadigan-deploy-68883f54
+    Description: S3 bucket containing Lambda deployment package
+  LambdaCodeKey:
+    Type: String
+    Default: fintechdemo-workflow-lambda.jar
+    Description: S3 key for Lambda deployment package
+
+Resources:
+  # S3 Bucket for Static Content
+  StaticContentBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'fintechdemo-static-${Environment}-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+
+  StaticContentBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref StaticContentBucket
+      PolicyDocument:
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource: !Sub 'arn:aws:s3:::${StaticContentBucket}/*'
+
+  # Single DynamoDB Table
+  WorkflowTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'fintechdemo-workflow-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: parent
+          AttributeType: S
+        - AttributeName: sequence
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: parent-sequence-index
+          KeySchema:
+            - AttributeName: parent
+              KeyType: HASH
+            - AttributeName: sequence
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+
+  # IAM Role for Lambda
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'fintechdemo-lambda-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaDynamoDBExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !GetAtt WorkflowTable.Arn
+                  - !Sub '${WorkflowTable.Arn}/index/*'
+
+  # Lambda Function for API handling
+  WorkflowLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'fintechdemo-workflow-${Environment}'
+      Runtime: java21
+      Handler: org.springframework.cloud.function.adapter.aws.FunctionInvoker::handleRequest
+      Code:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Ref LambdaCodeKey
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 1024
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          WORKFLOW_TABLE: !Ref WorkflowTable
+
+  # Lambda Function for DynamoDB Stream processing
+  StreamProcessorLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'fintechdemo-stream-processor-${Environment}'
+      Runtime: java21
+      Handler: com.fintechdemo.workflow.lambda.DynamoDbStreamHandler::handleRequest
+      Code:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Ref LambdaCodeKey
+      Role: !GetAtt StreamProcessorExecutionRole.Arn
+      Timeout: 60
+      MemorySize: 1024
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          WORKFLOW_TABLE: !Ref WorkflowTable
+
+  # IAM Role for Stream Processor Lambda
+  StreamProcessorExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'fintechdemo-stream-processor-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaDynamoDBExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:TransactWriteItems
+                Resource:
+                  - !GetAtt WorkflowTable.Arn
+                  - !Sub '${WorkflowTable.Arn}/index/*'
+
+  # DynamoDB Stream Event Source Mapping
+  WorkflowStreamMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt WorkflowTable.StreamArn
+      FunctionName: !Ref StreamProcessorLambda
+      StartingPosition: LATEST
+      BatchSize: 10
+      MaximumBatchingWindowInSeconds: 5
+
+  # API Gateway
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub 'fintechdemo-api-${Environment}'
+      Description: Fintechdemo Workflow API
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  ApiGatewayResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: '{proxy+}'
+
+  ApiGatewayMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ApiGatewayResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WorkflowLambda.Arn}/invocations'
+
+  ApiGatewayRootMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !GetAtt ApiGateway.RootResourceId
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WorkflowLambda.Arn}/invocations'
+
+  ApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - ApiGatewayMethod
+      - ApiGatewayRootMethod
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: !Ref Environment
+
+  LambdaApiGatewayPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WorkflowLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+Outputs:
+  ApiGatewayUrl:
+    Description: API Gateway URL
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiGatewayUrl'
+
+  StaticContentBucketName:
+    Description: S3 Bucket for Static Content
+    Value: !Ref StaticContentBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-StaticContentBucket'
+
+  StaticContentBucketWebsiteURL:
+    Description: S3 Bucket Website URL
+    Value: !GetAtt StaticContentBucket.WebsiteURL
+    Export:
+      Name: !Sub '${AWS::StackName}-StaticContentBucketWebsiteURL'
+
+  LambdaFunctionName:
+    Description: Lambda Function Name
+    Value: !Ref WorkflowLambda
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaFunction'
+
+  StreamProcessorFunctionName:
+    Description: Stream Processor Lambda Function Name
+    Value: !Ref StreamProcessorLambda
+    Export:
+      Name: !Sub '${AWS::StackName}-StreamProcessorFunction'
+
+  WorkflowTableName:
+    Description: DynamoDB Workflow Table Name
+    Value: !Ref WorkflowTable
+    Export:
+      Name: !Sub '${AWS::StackName}-WorkflowTable' 
