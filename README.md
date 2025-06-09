@@ -60,4 +60,4 @@ would allow this to be deployed to Kubernetes or ECS.
 ## Development Methodology
 
 I didn't actually write any of this code, I used Cursor with claude 4 sonnet. It was quite capable at iterating and fixing the initial issues with setting up
-the project, which was most of the work for such a simple project.
+the project, which was most of the work for such a simple project. I then reviewed the code and had Cursor make changes.
