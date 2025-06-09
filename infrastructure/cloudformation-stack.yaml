@@ -115,6 +115,9 @@ Resources:
       Role: !GetAtt LambdaExecutionRole.Arn
       Timeout: 30
       MemorySize: 1024
+      # SnapStart disabled due to Spring Boot compatibility issues
+      # SnapStart:
+      #   ApplyOn: PublishedVersions
       Environment:
         Variables:
           ENVIRONMENT: !Ref Environment
@@ -133,10 +136,42 @@ Resources:
       Role: !GetAtt StreamProcessorExecutionRole.Arn
       Timeout: 60
       MemorySize: 1024
+      # SnapStart disabled due to Spring Boot compatibility issues  
+      # SnapStart:
+      #   ApplyOn: PublishedVersions
       Environment:
         Variables:
           ENVIRONMENT: !Ref Environment
           WORKFLOW_TABLE: !Ref WorkflowTable
+
+  # Lambda Versions for SnapStart
+  WorkflowLambdaVersion:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref WorkflowLambda
+      Description: !Sub 'Version for SnapStart - ${Environment}'
+
+  WorkflowLambdaAlias:
+    Type: AWS::Lambda::Alias
+    Properties:
+      FunctionName: !Ref WorkflowLambda
+      FunctionVersion: !GetAtt WorkflowLambdaVersion.Version
+      Name: !Sub '${Environment}-snapstart'
+      Description: !Sub 'SnapStart alias for ${Environment}'
+
+  StreamProcessorLambdaVersion:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref StreamProcessorLambda
+      Description: !Sub 'Version for SnapStart - ${Environment}'
+
+  StreamProcessorLambdaAlias:
+    Type: AWS::Lambda::Alias
+    Properties:
+      FunctionName: !Ref StreamProcessorLambda
+      FunctionVersion: !GetAtt StreamProcessorLambdaVersion.Version
+      Name: !Sub '${Environment}-snapstart'
+      Description: !Sub 'SnapStart alias for ${Environment}'
 
   # IAM Role for Stream Processor Lambda
   StreamProcessorExecutionRole:
@@ -274,4 +309,16 @@ Outputs:
     Description: DynamoDB Workflow Table Name
     Value: !Ref WorkflowTable
     Export:
-      Name: !Sub '${AWS::StackName}-WorkflowTable' 
+      Name: !Sub '${AWS::StackName}-WorkflowTable'
+
+  WorkflowLambdaAlias:
+    Description: Workflow Lambda Alias with SnapStart
+    Value: !Ref WorkflowLambdaAlias
+    Export:
+      Name: !Sub '${AWS::StackName}-WorkflowLambdaAlias'
+
+  StreamProcessorLambdaAlias:
+    Description: Stream Processor Lambda Alias with SnapStart
+    Value: !Ref StreamProcessorLambdaAlias
+    Export:
+      Name: !Sub '${AWS::StackName}-StreamProcessorLambdaAlias' 

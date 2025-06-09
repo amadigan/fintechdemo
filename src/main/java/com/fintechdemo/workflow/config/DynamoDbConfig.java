@@ -3,6 +3,7 @@ package com.fintechdemo.workflow.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
@@ -26,6 +27,7 @@ public class DynamoDbConfig {
     private String secretAccessKey;
 
     @Bean
+    @Lazy  // Lazy initialization to prevent issues with SnapStart
     public DynamoDbClient dynamoDbClient() {
         var clientBuilder = DynamoDbClient.builder()
                 .region(Region.of(region));

@@ -7,19 +7,17 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fintechdemo.workflow.controller.CustomerController;
 import com.fintechdemo.workflow.model.Customer;
 import com.fintechdemo.workflow.service.CustomerService;
-import javax.inject.Inject;
+import com.fintechdemo.workflow.service.AccountService;
+import com.fintechdemo.workflow.service.TransactionService;
+import com.fintechdemo.workflow.controller.TransactionController;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 
 import java.util.function.Function;
 
 @SpringBootApplication(scanBasePackages = "com.fintechdemo.workflow")
 public class WorkflowLambdaHandler {
-
-    @Inject
-    private ApplicationContext applicationContext;
 
     @Bean
     public ObjectMapper objectMapper() {
@@ -29,17 +27,30 @@ public class WorkflowLambdaHandler {
     }
 
     @Bean
-    public Function<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> handleRequest() {
+    public Function<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> handleRequest(
+            CustomerService customerService,
+            AccountService accountService,
+            TransactionService transactionService,
+            TransactionController transactionController,
+            ObjectMapper objectMapper) {
         return request -> {
             try {
                 String path = request.getPath();
                 String method = request.getHttpMethod();
                 
                 // Route to appropriate controller based on path
-                if (path != null && path.startsWith("/api/customers")) {
-                    return handleCustomerRequest(request);
+                // Check for customer accounts first (more specific path)
+                if (path != null && path.matches("/api/customers/[^/]+/accounts")) {
+                    return handleAccountRequest(request, accountService, transactionService, transactionController, objectMapper);
+                } else if (path != null && path.startsWith("/api/customers")) {
+                    return handleCustomerRequest(request, customerService, objectMapper);
                 } else if (path != null && path.startsWith("/api/accounts")) {
-                    return handleAccountRequest(request);
+                    return handleAccountRequest(request, accountService, transactionService, transactionController, objectMapper);
+                } else if (path != null && path.equals("/health")) {
+                    // Simple health check endpoint
+                    return new APIGatewayProxyResponseEvent()
+                        .withStatusCode(200)
+                        .withBody("{\"status\":\"OK\",\"message\":\"Lambda function is running with SnapStart\"}");
                 } else {
                     return new APIGatewayProxyResponseEvent()
                         .withStatusCode(404)
@@ -53,30 +64,16 @@ public class WorkflowLambdaHandler {
         };
     }
 
-    private APIGatewayProxyResponseEvent handleCustomerRequest(APIGatewayProxyRequestEvent request) {
+    private APIGatewayProxyResponseEvent handleCustomerRequest(APIGatewayProxyRequestEvent request, 
+                                                               CustomerService customerService, 
+                                                               ObjectMapper objectMapper) {
         String method = request.getHttpMethod();
         String path = request.getPath();
         
         try {
-            if ("GET".equals(method) && path.matches("/api/customers/[^/]+/accounts")) {
-                // Extract customer ID from path: /api/customers/{customerId}/accounts
-                String customerId = path.substring("/api/customers/".length());
-                customerId = customerId.substring(0, customerId.indexOf("/accounts"));
-                
-                com.fintechdemo.workflow.service.AccountService accountService = 
-                    applicationContext.getBean(com.fintechdemo.workflow.service.AccountService.class);
-                ObjectMapper objectMapper = applicationContext.getBean(ObjectMapper.class);
-                java.util.List<com.fintechdemo.workflow.model.Account> accounts = accountService.getCustomerAccounts(customerId);
-                String responseBody = objectMapper.writeValueAsString(accounts);
-                
-                return new APIGatewayProxyResponseEvent()
-                    .withStatusCode(200)
-                    .withBody(responseBody);
-            } else if ("GET".equals(method) && path.matches("/api/customers/[^/]+")) {
+            if ("GET".equals(method) && path.matches("/api/customers/[^/]+")) {
                 // Extract ID from path
                 String id = path.substring("/api/customers/".length());
-                CustomerService customerService = applicationContext.getBean(CustomerService.class);
-                ObjectMapper objectMapper = applicationContext.getBean(ObjectMapper.class);
                 Customer customer = customerService.getCustomer(id);
                 String responseBody = objectMapper.writeValueAsString(customer);
                 
@@ -84,8 +81,6 @@ public class WorkflowLambdaHandler {
                     .withStatusCode(200)
                     .withBody(responseBody);
             } else if ("POST".equals(method) && "/api/customers".equals(path)) {
-                CustomerService customerService = applicationContext.getBean(CustomerService.class);
-                ObjectMapper objectMapper = applicationContext.getBean(ObjectMapper.class);
                 CustomerController.CreateCustomerRequest customerRequest = 
                     objectMapper.readValue(request.getBody(), CustomerController.CreateCustomerRequest.class);
                 
@@ -107,34 +102,45 @@ public class WorkflowLambdaHandler {
         }
     }
 
-    private APIGatewayProxyResponseEvent handleAccountRequest(APIGatewayProxyRequestEvent request) {
+    private APIGatewayProxyResponseEvent handleAccountRequest(APIGatewayProxyRequestEvent request,
+                                                              AccountService accountService,
+                                                              TransactionService transactionService,
+                                                              TransactionController transactionController,
+                                                              ObjectMapper objectMapper) {
         String method = request.getHttpMethod();
         String path = request.getPath();
         
         try {
+            // Handle customer accounts endpoint  
+            if ("GET".equals(method) && path.matches("/api/customers/[^/]+/accounts")) {
+                // Extract customer ID from path: /api/customers/{customerId}/accounts
+                String customerId = path.substring("/api/customers/".length());
+                customerId = customerId.substring(0, customerId.indexOf("/accounts"));
+                
+                java.util.List<com.fintechdemo.workflow.model.Account> accounts = accountService.getCustomerAccounts(customerId);
+                String responseBody = objectMapper.writeValueAsString(accounts);
+                
+                return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(200)
+                    .withBody(responseBody);
+            }
             // Handle transaction-related endpoints
-            if ("POST".equals(method) && path.matches("/api/accounts/[^/]+/deposit")) {
-                return handleDepositRequest(request);
+            else if ("POST".equals(method) && path.matches("/api/accounts/[^/]+/deposit")) {
+                return handleDepositRequest(request, transactionService, objectMapper);
             } else if ("POST".equals(method) && path.matches("/api/accounts/[^/]+/transaction")) {
-                return handleWithdrawalRequest(request);
+                return handleWithdrawalRequest(request, transactionService, objectMapper);
             } else if ("GET".equals(method) && path.matches("/api/accounts/[^/]+/transactions\\.csv")) {
-                return handleGetTransactionsCsvRequest(request);
+                return handleGetTransactionsCsvRequest(request, transactionController);
             } else if ("GET".equals(method) && path.matches("/api/accounts/[^/]+/transactions")) {
-                return handleGetTransactionsRequest(request);
+                return handleGetTransactionsRequest(request, transactionService, objectMapper);
             } else if ("GET".equals(method) && path.matches("/api/accounts/[^/]+")) {
                 String id = path.substring("/api/accounts/".length());
-                com.fintechdemo.workflow.service.AccountService accountService = 
-                    applicationContext.getBean(com.fintechdemo.workflow.service.AccountService.class);
-                ObjectMapper objectMapper = applicationContext.getBean(ObjectMapper.class);
                 com.fintechdemo.workflow.model.Account account = accountService.getAccount(id);
                 String responseBody = objectMapper.writeValueAsString(account);
                 return new APIGatewayProxyResponseEvent()
                     .withStatusCode(200)
                     .withBody(responseBody);
             } else if ("POST".equals(method) && "/api/accounts".equals(path)) {
-                com.fintechdemo.workflow.service.AccountService accountService = 
-                    applicationContext.getBean(com.fintechdemo.workflow.service.AccountService.class);
-                ObjectMapper objectMapper = applicationContext.getBean(ObjectMapper.class);
                 com.fintechdemo.workflow.controller.CreateAccountRequest accountRequest = 
                     objectMapper.readValue(request.getBody(), com.fintechdemo.workflow.controller.CreateAccountRequest.class);
                 
@@ -159,17 +165,15 @@ public class WorkflowLambdaHandler {
         }
     }
 
-    private APIGatewayProxyResponseEvent handleDepositRequest(APIGatewayProxyRequestEvent request) {
+    private APIGatewayProxyResponseEvent handleDepositRequest(APIGatewayProxyRequestEvent request,
+                                                              TransactionService transactionService,
+                                                              ObjectMapper objectMapper) {
         try {
             String path = request.getPath();
             String accountId = path.substring("/api/accounts/".length(), path.indexOf("/deposit"));
             
-            ObjectMapper objectMapper = applicationContext.getBean(ObjectMapper.class);
             com.fintechdemo.workflow.controller.CreateDepositRequest depositRequest = 
                 objectMapper.readValue(request.getBody(), com.fintechdemo.workflow.controller.CreateDepositRequest.class);
-            
-            com.fintechdemo.workflow.service.TransactionService transactionService = 
-                applicationContext.getBean(com.fintechdemo.workflow.service.TransactionService.class);
             
             com.fintechdemo.workflow.model.Transaction transaction = transactionService.createDeposit(
                 accountId,
@@ -198,17 +202,15 @@ public class WorkflowLambdaHandler {
         }
     }
 
-    private APIGatewayProxyResponseEvent handleWithdrawalRequest(APIGatewayProxyRequestEvent request) {
+    private APIGatewayProxyResponseEvent handleWithdrawalRequest(APIGatewayProxyRequestEvent request,
+                                                                 TransactionService transactionService,
+                                                                 ObjectMapper objectMapper) {
         try {
             String path = request.getPath();
             String accountId = path.substring("/api/accounts/".length(), path.indexOf("/transaction"));
             
-            ObjectMapper objectMapper = applicationContext.getBean(ObjectMapper.class);
             com.fintechdemo.workflow.controller.CreateWithdrawalRequest withdrawalRequest = 
                 objectMapper.readValue(request.getBody(), com.fintechdemo.workflow.controller.CreateWithdrawalRequest.class);
-            
-            com.fintechdemo.workflow.service.TransactionService transactionService = 
-                applicationContext.getBean(com.fintechdemo.workflow.service.TransactionService.class);
             
             com.fintechdemo.workflow.model.Transaction transaction = transactionService.createWithdrawal(
                 accountId,
@@ -237,7 +239,9 @@ public class WorkflowLambdaHandler {
         }
     }
 
-    private APIGatewayProxyResponseEvent handleGetTransactionsRequest(APIGatewayProxyRequestEvent request) {
+    private APIGatewayProxyResponseEvent handleGetTransactionsRequest(APIGatewayProxyRequestEvent request,
+                                                                      TransactionService transactionService,
+                                                                      ObjectMapper objectMapper) {
         try {
             String path = request.getPath();
             String accountId = path.substring("/api/accounts/".length(), path.indexOf("/transactions"));
@@ -253,13 +257,9 @@ public class WorkflowLambdaHandler {
                 }
             }
             
-            com.fintechdemo.workflow.service.TransactionService transactionService = 
-                applicationContext.getBean(com.fintechdemo.workflow.service.TransactionService.class);
-            
             com.fintechdemo.workflow.controller.TransactionListResponse response = 
                 transactionService.getAccountTransactions(accountId, nextToken, limit);
             
-            ObjectMapper objectMapper = applicationContext.getBean(ObjectMapper.class);
             String responseBody = objectMapper.writeValueAsString(response);
             return new APIGatewayProxyResponseEvent()
                 .withStatusCode(200)
@@ -271,16 +271,11 @@ public class WorkflowLambdaHandler {
         }
     }
 
-    private APIGatewayProxyResponseEvent handleGetTransactionsCsvRequest(APIGatewayProxyRequestEvent request) {
+    private APIGatewayProxyResponseEvent handleGetTransactionsCsvRequest(APIGatewayProxyRequestEvent request,
+                                                                         TransactionController transactionController) {
         try {
             String path = request.getPath();
             String accountId = path.substring("/api/accounts/".length(), path.indexOf("/transactions.csv"));
-            
-            com.fintechdemo.workflow.service.TransactionService transactionService = 
-                applicationContext.getBean(com.fintechdemo.workflow.service.TransactionService.class);
-            
-            com.fintechdemo.workflow.controller.TransactionController transactionController = 
-                applicationContext.getBean(com.fintechdemo.workflow.controller.TransactionController.class);
             
             org.springframework.http.ResponseEntity<String> response = transactionController.getTransactionsCsv(accountId);
             

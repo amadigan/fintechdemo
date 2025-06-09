@@ -1,12 +1,10 @@
 package com.fintechdemo.workflow.controller;
 
-import com.fintechdemo.workflow.controller.CreateDepositRequest;
-import com.fintechdemo.workflow.controller.CreateWithdrawalRequest;
-import com.fintechdemo.workflow.controller.TransactionListResponse;
 import com.fintechdemo.workflow.model.Transaction;
 import com.fintechdemo.workflow.service.TransactionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +20,7 @@ import org.apache.commons.csv.CSVPrinter;
 @Slf4j
 @RestController
 @RequiredArgsConstructor
+@Lazy  // Lazy initialization to prevent issues with SnapStart
 public class TransactionController {
 
     private final TransactionService transactionService;
@@ -127,10 +126,11 @@ public class TransactionController {
     
     private String generateCsv(List<Transaction> transactions) {
         try (StringWriter writer = new StringWriter();
-             CSVPrinter csvPrinter = new CSVPrinter(writer, CSVFormat.DEFAULT.withHeader(
-                 "sequence", "created", "type", "amount", "currency", 
-                 "transactedAt", "beneficiaryIBAN", "originatingCountry", 
-                 "paymentRef", "purposeRef"))) {
+             CSVPrinter csvPrinter = new CSVPrinter(writer, CSVFormat.Builder.create()
+                 .setHeader("sequence", "created", "type", "amount", "currency", 
+                           "transactedAt", "beneficiaryIBAN", "originatingCountry", 
+                           "paymentRef", "purposeRef")
+                 .build())) {
             
             // Date formatter for created timestamp (DD-MMM-YY HH:mm:ss format as shown in plan)
             DateTimeFormatter createdFormatter = DateTimeFormatter.ofPattern("dd-MMM-yy HH:mm:ss");

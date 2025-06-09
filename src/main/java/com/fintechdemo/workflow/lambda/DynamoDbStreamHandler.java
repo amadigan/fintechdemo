@@ -12,7 +12,7 @@ import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.model.TransactWriteItemsEnhancedRequest;
-import software.amazon.awssdk.enhanced.dynamodb.model.PutItemEnhancedRequest;
+import software.amazon.awssdk.enhanced.dynamodb.model.TransactPutItemEnhancedRequest;
 import software.amazon.awssdk.enhanced.dynamodb.Expression;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
@@ -257,12 +257,12 @@ public class DynamoDbStreamHandler implements RequestHandler<DynamodbEvent, Stri
             .build();
 
         // Create put requests with conditional expressions for optimistic locking
-        PutItemEnhancedRequest<Transaction> transactionPutRequest = PutItemEnhancedRequest.builder(Transaction.class)
+        TransactPutItemEnhancedRequest<Transaction> transactionPutRequest = TransactPutItemEnhancedRequest.builder(Transaction.class)
             .item(updatedTransaction)
             .conditionExpression(transactionCondition)
             .build();
             
-        PutItemEnhancedRequest<Account> accountPutRequest = PutItemEnhancedRequest.builder(Account.class)
+        TransactPutItemEnhancedRequest<Account> accountPutRequest = TransactPutItemEnhancedRequest.builder(Account.class)
             .item(updatedAccount)
             .conditionExpression(accountCondition)
             .build();
