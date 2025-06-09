@@ -146,3 +146,6 @@ failsafe-reports/
 # Coverage reports
 jacoco.exec
 *.exec 
+
+# Documentation - specific files to ignore
+requirements.md
