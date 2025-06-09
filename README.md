@@ -31,7 +31,7 @@ DynamoDB. Additionally, a dead letter queue would be used to handle failed trans
 
 ## Scalability
 
-This design uses Lambda to process incoming requests, and is designed to be deployed to multiple regions, with Geo-IP based routing via route 53. Both Lambda
+This design uses Lambda to process incoming requests, and is designed to be deployed to multiple regions, with Geo-IP based routing via Route 53. Both Lambda
 and DynamoDB come with very high scalability. The multi-region design reduces latency for users, provides fault tolerance (an unhealth region can be taken offline),
 and spreads request load across multiple regions. This example does not use Lambda SnapStart, but that would also be used to reduce cold start times after
 deployment.
@@ -45,7 +45,7 @@ I have skipped authentication and authorization for this prototype. An authoriza
 This project can be deployed to an AWS account. This process primarily uses the AWS CLI and CloudFormation, and is automated using a deployment script. For a
 real system, a fully automated deployment process would be developed, possibly using the AWS CDK for better control over the stack.
 
-Before deployment, you will need an AWS account, and an S3 bucket to hold the Lambda zip. For further details, see the comments in (deploy.sh)[deploy.sh].
+Before deployment, you will need an AWS account, and an S3 bucket to hold the Lambda zip. For further details, see the comments in [deploy.sh](deploy.sh).
 
 ## Testing
 
@@ -61,3 +61,11 @@ would allow this to be deployed to Kubernetes or ECS.
 
 I didn't actually write any of this code, I used Cursor with claude 4 sonnet. It was quite capable at iterating and fixing the initial issues with setting up
 the project, which was most of the work for such a simple project. I then reviewed the code and had Cursor make changes.
+
+## Future Improvements
+
+- Properly wire controller functions to a router
+- Write all logs as JSON
+- Add SQS dead letter queue for failed transactions
+- Fix SnapStart
+- Check account balance in controller and transaction processor

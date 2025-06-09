@@ -4,7 +4,7 @@ This will be a single module maven project that builds an AWS Lambda function zi
 system, a multi-module maven project would be used, and functionality would be split into separate lambda functions. The way functionality is split might take 
 many forms, but at minimum "frontend" (REST) and "backend" (event processing) would be separate lambda functions.
 
-This will be a Sprint Boot application running on AWS Lambda with a DynamoDB database. Transactions written to by REST will lack a sequence number. DynamoDB
+This will be a Spring Boot application running on AWS Lambda with a DynamoDB database. Transactions written to by REST will lack a sequence number. DynamoDB
 will stream the transactions to Lambda, and the Lambda will transactionally write the sequence number to the transaction. Deposits increase the balance of 
 the account, and payments decrease the "pending" amount. It is assumed a later process would "settle" pending transactions to the balance. In a larger system,
 deposits may also be "pending" before settling.
@@ -173,13 +173,13 @@ For an account, the parentId points to the customer, the sequence is "account-{U
 low volume, so a UUIDv7 is considered safe.
 
 Transactions are stored in the table with a `parentId` of the account, and a `sequence` of "transaction-YYYYMMDD-000001". 
-The account object stores the latestTransactionId, which is the sequence of the last transaction. The message processor
+The account object stores the `latestTransactionId`, which is the sequence of the last transaction. The message processor
 (the DynamoDB stream trigger) will transactionally stamp new transactions with the next sequence number and update the
-account object. This process uses an optimistic locking mechanism, and may retry the transaction multiple operations
+account object. This process uses an optimistic locking mechanism, and may retry the transaction if multiple operations
 attempt to update the account object at the same time.
 
 ## Testing
 
-A basic smoke test is included as `test-api.sh`. This is for basic validation after deployment. I tend to be distrustful of tests that mock complex
+A basic smoke test is included as `test-comprehensive.sh`. This is for basic validation after deployment. I tend to be distrustful of tests that mock complex
 dependencies, such as databases. Therefore, most of my tests take the form of "integration tests" using surefire. DynamoDB is run in a docker container
 for the integration tests.
